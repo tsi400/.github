@@ -1,0 +1,89 @@
+name: Pick Runner
+
+# Org-level reusable workflow that checks GitHub Actions free tier usage
+# and returns the best runner label.
+#
+# Priority order:
+#   1. GitHub-hosted (free tier minutes remaining)
+#   2. WF self-hosted GCP runners (wfservices-478722, label: wf-gcp)
+#   3. TSI self-hosted GCP runners (plotkasite, label: gcp)
+#
+# Usage from any repo in the tsi400 or wayfong orgs:
+#   jobs:
+#     pick-runner:
+#       uses: tsi400/.github/.github/workflows/pick-runner.yml@main
+#       secrets: inherit
+#
+#     my-job:
+#       needs: [pick-runner]
+#       runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner) }}
+
+on:
+  workflow_call:
+    inputs:
+      prefer-self-hosted:
+        description: "Skip free tier check, always use self-hosted"
+        type: boolean
+        default: false
+    outputs:
+      runner:
+        description: "Runner label to use (JSON array string)"
+        value: ${{ jobs.pick.outputs.runner }}
+      runner-type:
+        description: "Type of runner selected (github-hosted or self-hosted)"
+        value: ${{ jobs.pick.outputs.runner-type }}
+
+jobs:
+  pick:
+    name: Pick Runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      runner: ${{ steps.decide.outputs.runner }}
+      runner-type: ${{ steps.decide.outputs.runner-type }}
+    steps:
+      - name: Check free tier and pick runner
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREFER_SELF_HOSTED: ${{ inputs.prefer-self-hosted }}
+        run: |
+          # GitHub Enterprise: 50,000 min/month included
+          # GitHub Team: 3,000 min/month included
+          # GitHub Pro: 3,000 min/month included
+          # GitHub Free: 2,000 min/month included
+          FREE_TIER_LIMIT=50000
+          BUFFER=500  # keep 500 min buffer before switching to self-hosted
+
+          if [ "$PREFER_SELF_HOSTED" = "true" ]; then
+            echo "runner=[\"self-hosted\",\"linux\",\"x64\",\"wf-gcp\"]" >> $GITHUB_OUTPUT
+            echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
+            echo "Forced self-hosted by input flag"
+            exit 0
+          fi
+
+          # Check current org's minutes via new billing API
+          MINUTES_USED=$(curl -sf \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/${{ github.repository_owner }}/settings/billing/usage" 2>/dev/null \
+            | jq '[.usageItems[] | select(.product == "actions")] | map(.quantity) | add // 0')
+
+          if [ -z "$MINUTES_USED" ] || [ "$MINUTES_USED" = "null" ]; then
+            MINUTES_USED=999999
+          fi
+
+          REMAINING=$(echo "$FREE_TIER_LIMIT - ${MINUTES_USED%.*}" | bc 2>/dev/null || echo "0")
+          echo "Org: ${{ github.repository_owner }}, Minutes used: $MINUTES_USED, Remaining: ~$REMAINING"
+
+          if [ "${REMAINING%.*}" -gt "$BUFFER" ] 2>/dev/null; then
+            echo "runner=[\"ubuntu-latest\"]" >> $GITHUB_OUTPUT
+            echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
+            echo "Using GitHub-hosted ($REMAINING free min remaining)"
+          else
+            # Free tier exhausted — use self-hosted
+            # WF runners (wf-gcp) preferred, TSI runners (gcp) as fallback
+            echo "runner=[\"self-hosted\",\"linux\",\"x64\",\"wf-gcp\"]" >> $GITHUB_OUTPUT
+            echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
+            echo "Free tier low/exhausted — using self-hosted GCP runners"
+          fi
