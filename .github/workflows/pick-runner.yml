@@ -5,8 +5,7 @@ name: Pick Runner
 #
 # Priority order:
 #   1. GitHub-hosted (free tier minutes remaining)
-#   2. WF self-hosted GCP runners (wfservices-478722, label: wf-gcp)
-#   3. TSI self-hosted GCP runners (plotkasite, label: gcp)
+#   2. Self-hosted GCP runners (label: gcp)
 #
 # Usage from any repo in the tsi400 or wayfong orgs:
 #   jobs:
@@ -55,22 +54,37 @@ jobs:
           FREE_TIER_LIMIT=50000
           BUFFER=500  # keep 500 min buffer before switching to self-hosted
 
+          SELF_HOSTED='["self-hosted","linux","x64","gcp"]'
+
           if [ "$PREFER_SELF_HOSTED" = "true" ]; then
-            echo "runner=[\"self-hosted\",\"linux\",\"x64\",\"wf-gcp\"]" >> $GITHUB_OUTPUT
+            echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
             echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
             echo "Forced self-hosted by input flag"
             exit 0
           fi
 
-          # Check current org's minutes via new billing API
-          MINUTES_USED=$(curl -sf \
+          # Check current org's minutes via billing API
+          # Note: GITHUB_TOKEN may lack org billing permissions — if the call
+          # fails we default to GitHub-hosted (safe, since Enterprise has 50k min).
+          HTTP_CODE=$(curl -s -o /tmp/billing.json -w "%{http_code}" \
             -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/${{ github.repository_owner }}/settings/billing/usage" 2>/dev/null \
-            | jq '[.usageItems[] | select(.product == "actions")] | map(.quantity) | add // 0')
+            "https://api.github.com/orgs/${{ github.repository_owner }}/settings/billing/usage" 2>/dev/null)
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Billing API returned HTTP $HTTP_CODE — defaulting to GitHub-hosted"
+            echo "runner=[\"ubuntu-latest\"]" >> $GITHUB_OUTPUT
+            echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          MINUTES_USED=$(jq '[.usageItems[] | select(.product == "actions")] | map(.quantity) | add // 0' /tmp/billing.json)
 
           if [ -z "$MINUTES_USED" ] || [ "$MINUTES_USED" = "null" ]; then
-            MINUTES_USED=999999
+            echo "Could not parse minutes — defaulting to GitHub-hosted"
+            echo "runner=[\"ubuntu-latest\"]" >> $GITHUB_OUTPUT
+            echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
           REMAINING=$(echo "$FREE_TIER_LIMIT - ${MINUTES_USED%.*}" | bc 2>/dev/null || echo "0")
@@ -81,9 +95,8 @@ jobs:
             echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
             echo "Using GitHub-hosted ($REMAINING free min remaining)"
           else
-            # Free tier exhausted — use self-hosted
-            # WF runners (wf-gcp) preferred, TSI runners (gcp) as fallback
-            echo "runner=[\"self-hosted\",\"linux\",\"x64\",\"wf-gcp\"]" >> $GITHUB_OUTPUT
+            # Free tier exhausted — use self-hosted GCP runners
+            echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
             echo "runner-type=self-hosted" >> $GITHUB_OUTPUT
             echo "Free tier low/exhausted — using self-hosted GCP runners"
           fi
