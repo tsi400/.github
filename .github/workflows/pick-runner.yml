@@ -61,6 +61,7 @@ jobs:
           GH_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
           PREFER_SELF_HOSTED: ${{ inputs.prefer-self-hosted }}
           MODE: ${{ inputs.mode }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           # GitHub Enterprise: 50,000 min/month
           # GitHub Team/Pro: 3,000 min/month
@@ -74,18 +75,28 @@ jobs:
           WF_GCP='["self-hosted","linux","x64","wayfong-gcp"]'
           TSI_GCP='["self-hosted","linux","x64","tsi-gcp"]'
 
-          # --- Agent mode: always self-hosted, wayfong first ---
+          # Select self-hosted label based on calling repo's org
+          # Runners registered in org A are invisible to repos in org B
+          if [ "$REPO_OWNER" = "wayfong" ]; then
+            SELF_HOSTED="$WF_GCP"
+            SELF_HOSTED_TYPE="wayfong-gcp"
+          else
+            SELF_HOSTED="$TSI_GCP"
+            SELF_HOSTED_TYPE="tsi-gcp"
+          fi
+
+          # --- Agent mode: always self-hosted ---
           if [ "$MODE" = "agent" ]; then
-            echo "Agent mode — wayfong GCP primary (max 16)"
-            echo "runner=$WF_GCP" >> $GITHUB_OUTPUT
-            echo "runner-type=wayfong-gcp" >> $GITHUB_OUTPUT
+            echo "Agent mode — ${SELF_HOSTED_TYPE} (max 16)"
+            echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
+            echo "runner-type=$SELF_HOSTED_TYPE" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           # --- Forced self-hosted ---
           if [ "$PREFER_SELF_HOSTED" = "true" ]; then
-            echo "runner=$WF_GCP" >> $GITHUB_OUTPUT
-            echo "runner-type=wayfong-gcp" >> $GITHUB_OUTPUT
+            echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
+            echo "runner-type=$SELF_HOSTED_TYPE" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -132,9 +143,7 @@ jobs:
             exit 0
           fi
 
-          # Priority 3: wayfong GCP self-hosted
-          echo "Free tiers exhausted — wayfong GCP self-hosted"
-          echo "runner=$WF_GCP" >> $GITHUB_OUTPUT
-          echo "runner-type=wayfong-gcp" >> $GITHUB_OUTPUT
-          # Priority 4 (tsi400 GCP) is handled by runner group overflow
-          # if wayfong GCP is at capacity
+          # Priority 3: self-hosted (org-aware)
+          echo "Free tiers exhausted — ${SELF_HOSTED_TYPE} self-hosted"
+          echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
+          echo "runner-type=$SELF_HOSTED_TYPE" >> $GITHUB_OUTPUT
