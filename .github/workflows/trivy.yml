@@ -1,0 +1,83 @@
+name: Trivy
+
+# Reusable Trivy vulnerability scanning (filesystem + optional container).
+#
+# Usage:
+#   jobs:
+#     trivy:
+#       uses: tsi400/.github/.github/workflows/trivy.yml@main
+#       with:
+#         scan-container: true
+#         image-name: my-service
+#       permissions:
+#         security-events: write
+#         contents: read
+
+on:
+  workflow_call:
+    inputs:
+      scan-container:
+        description: "Also scan Docker image (requires Dockerfile)"
+        type: boolean
+        default: false
+      image-name:
+        description: "Docker image name for container scan"
+        type: string
+        default: app
+      severity:
+        description: "Severity levels to report"
+        type: string
+        default: CRITICAL,HIGH
+
+jobs:
+  filesystem:
+    name: Filesystem Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.29.0
+        with:
+          scan-type: fs
+          scan-ref: '.'
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-fs.sarif
+          severity: ${{ inputs.severity }}
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@df409f7d9260372bd5f19e5b04e83cb3c43714ae # v3.27.9
+        with:
+          sarif_file: trivy-fs.sarif
+
+  container:
+    name: Container Scan
+    if: inputs.scan-container
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build image
+        run: docker build -t ${{ inputs.image-name }}:${{ github.sha }} .
+
+      - name: Trivy container scan
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.29.0
+        with:
+          image-ref: ${{ inputs.image-name }}:${{ github.sha }}
+          format: sarif
+          output: trivy-container.sarif
+          severity: ${{ inputs.severity }}
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@df409f7d9260372bd5f19e5b04e83cb3c43714ae # v3.27.9
+        with:
+          sarif_file: trivy-container.sarif

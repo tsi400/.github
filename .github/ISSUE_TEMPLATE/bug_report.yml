@@ -1,0 +1,78 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this issue. Please fill out the details below.
+        If this maps to a Linear issue, include the identifier in the title (e.g., `[TSI-123] Bug title`).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Numbered steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical — system down / data loss
+        - High — major feature broken, no workaround
+        - Medium — feature impaired, workaround exists
+        - Low — cosmetic / minor inconvenience
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Node version, OS, browser, deployment environment, etc.
+
+  - type: input
+    id: linear-id
+    attributes:
+      label: Linear Issue ID
+      description: "Link to Linear issue if one exists (e.g., TSI-123)"
+      placeholder: "TSI-"
+
+  - type: checkboxes
+    id: duplicates
+    attributes:
+      label: Duplicate Check
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true

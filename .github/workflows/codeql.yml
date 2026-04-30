@@ -1,0 +1,51 @@
+name: CodeQL
+
+# Reusable CodeQL security analysis.
+#
+# Usage:
+#   jobs:
+#     codeql:
+#       uses: tsi400/.github/.github/workflows/codeql.yml@main
+#       permissions:
+#         security-events: write
+#         contents: read
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: "CodeQL language (javascript-typescript, python, go, etc.)"
+        type: string
+        default: javascript-typescript
+      queries:
+        description: "Query suite"
+        type: string
+        default: +security-and-quality
+
+jobs:
+  analyze:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@df409f7d9260372bd5f19e5b04e83cb3c43714ae # v3.27.9
+        with:
+          languages: ${{ inputs.language }}
+          queries: ${{ inputs.queries }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@df409f7d9260372bd5f19e5b04e83cb3c43714ae # v3.27.9
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@df409f7d9260372bd5f19e5b04e83cb3c43714ae # v3.27.9
+        with:
+          category: "/language:${{ inputs.language }}"

@@ -1,0 +1,93 @@
+name: SonarCloud
+
+# Reusable SonarCloud analysis.
+#
+# Usage:
+#   jobs:
+#     sonar:
+#       uses: tsi400/.github/.github/workflows/sonarcloud.yml@main
+#       with:
+#         project-key: tsi400_myJarvis
+#         sonar-org: tsi400
+#       secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: "SonarCloud project key (org_repo format)"
+        type: string
+        required: true
+      sonar-org:
+        description: "SonarCloud organization"
+        type: string
+        required: true
+      project-name:
+        description: "Display name (defaults to project-key)"
+        type: string
+        default: ''
+      node-version:
+        type: string
+        default: '20'
+      package-manager:
+        type: string
+        default: npm
+      sources:
+        type: string
+        default: src
+      working-directory:
+        type: string
+        default: '.'
+
+jobs:
+  scan:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+            corepack enable && pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Run tests with coverage
+        run: |
+          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+            pnpm test -- --coverage
+          else
+            npm test -- --coverage
+          fi
+        continue-on-error: true
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@383f7e52eae3ab0510c3cb0e7d9d150bbaebd6ea # v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.organization=${{ inputs.sonar-org }}
+            -Dsonar.projectName=${{ inputs.project-name || inputs.project-key }}
+            -Dsonar.sources=${{ inputs.sources }}
+            -Dsonar.tests=${{ inputs.sources }}
+            -Dsonar.test.inclusions=**/*.test.ts,**/*.spec.ts,**/*.test.tsx,**/*.spec.tsx
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,.next/**
