@@ -1,7 +1,7 @@
 name: Pick Agent Runner
 
-# Agent/swarm runner picker — always self-hosted.
-# Priority: wayfong GCP (max 16) → tsi400 GCP (max 16)
+# Agent/swarm runner picker — always self-hosted, org-aware.
+# Selects the correct runner pool based on the calling repo's org.
 #
 # Usage:
 #   jobs:
@@ -17,7 +17,11 @@ on:
   workflow_call:
     inputs:
       prefer-tsi:
-        description: "Use tsi400 GCP instead of wayfong GCP"
+        description: "Force tsi400 GCP regardless of calling org"
+        type: boolean
+        default: false
+      prefer-wayfong:
+        description: "Force wayfong GCP regardless of calling org"
         type: boolean
         default: false
     outputs:
@@ -25,7 +29,7 @@ on:
         description: "Runner label (JSON array)"
         value: ${{ jobs.pick.outputs.runner }}
       runner-type:
-        description: "wayfong-gcp or tsi400-gcp"
+        description: "wayfong-gcp or tsi-gcp"
         value: ${{ jobs.pick.outputs.runner-type }}
       max-concurrent:
         description: "Max concurrent agents on this runner pool"
@@ -43,15 +47,23 @@ jobs:
     steps:
       - name: Select agent runner pool
         id: decide
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           WF_GCP='["self-hosted","linux","x64","wayfong-gcp"]'
           TSI_GCP='["self-hosted","linux","x64","tsi-gcp"]'
 
           if [ "${{ inputs.prefer-tsi }}" = "true" ]; then
             echo "runner=$TSI_GCP" >> $GITHUB_OUTPUT
-            echo "runner-type=tsi400-gcp" >> $GITHUB_OUTPUT
-          else
+            echo "runner-type=tsi-gcp" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.prefer-wayfong }}" = "true" ]; then
             echo "runner=$WF_GCP" >> $GITHUB_OUTPUT
             echo "runner-type=wayfong-gcp" >> $GITHUB_OUTPUT
+          elif [ "$REPO_OWNER" = "wayfong" ]; then
+            echo "runner=$WF_GCP" >> $GITHUB_OUTPUT
+            echo "runner-type=wayfong-gcp" >> $GITHUB_OUTPUT
+          else
+            echo "runner=$TSI_GCP" >> $GITHUB_OUTPUT
+            echo "runner-type=tsi-gcp" >> $GITHUB_OUTPUT
           fi
           echo "max-concurrent=16" >> $GITHUB_OUTPUT

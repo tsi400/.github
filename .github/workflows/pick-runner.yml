@@ -4,17 +4,15 @@ name: Pick Runner
 # both tsi400 and wayfong orgs and returns the best runner label.
 #
 # CI runner priority:
-#   1. tsi400 GitHub-hosted  (free minutes remaining)
-#   2. wayfong GitHub-hosted (free minutes remaining)
-#   3. wayfong GCP self-hosted
-#   4. tsi400 GCP self-hosted
+#   1. GitHub-hosted (free minutes remaining in either org)
+#   2. Self-hosted GCP (org-aware: tsi-gcp for tsi400, wayfong-gcp for wayfong)
 #
 # Agent/swarm runner priority:
-#   1. wayfong GCP self-hosted (max 16 concurrent)
-#   2. tsi400 GCP self-hosted  (max 16 concurrent)
+#   Always self-hosted (org-aware)
 #
 # Prerequisites:
-#   Org secret ORG_BILLING_PAT — a PAT with read:org scope for both orgs.
+#   Org secret ORG_BILLING_PAT — classic PAT with read:org scope for both orgs.
+#   Visibility must be "all" (not "private") so public repos can use it.
 #
 # Usage:
 #   jobs:
@@ -42,7 +40,7 @@ on:
         description: "Runner label to use (JSON array string)"
         value: ${{ jobs.pick.outputs.runner }}
       runner-type:
-        description: "Type selected: github-hosted | wayfong-gcp | tsi400-gcp"
+        description: "Type selected: github-hosted | wayfong-gcp | tsi-gcp"
         value: ${{ jobs.pick.outputs.runner-type }}
 
 jobs:
@@ -63,15 +61,12 @@ jobs:
           MODE: ${{ inputs.mode }}
           REPO_OWNER: ${{ github.repository_owner }}
         run: |
-          # GitHub Enterprise: 50,000 min/month
-          # GitHub Team/Pro: 3,000 min/month
-          # GitHub Free: 2,000 min/month
           FREE_TIER_LIMIT=50000
           BUFFER=500
 
           TOKEN="${GH_TOKEN:-$GH_TOKEN_FALLBACK}"
 
-          TSI_HOSTED='["ubuntu-latest"]'
+          GITHUB_HOSTED='["ubuntu-latest"]'
           WF_GCP='["self-hosted","linux","x64","wayfong-gcp"]'
           TSI_GCP='["self-hosted","linux","x64","tsi-gcp"]'
 
@@ -87,7 +82,7 @@ jobs:
 
           # --- Agent mode: always self-hosted ---
           if [ "$MODE" = "agent" ]; then
-            echo "Agent mode — ${SELF_HOSTED_TYPE} (max 16)"
+            echo "Agent mode — ${SELF_HOSTED_TYPE}"
             echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
             echo "runner-type=$SELF_HOSTED_TYPE" >> $GITHUB_OUTPUT
             exit 0
@@ -95,12 +90,14 @@ jobs:
 
           # --- Forced self-hosted ---
           if [ "$PREFER_SELF_HOSTED" = "true" ]; then
+            echo "Forced self-hosted — ${SELF_HOSTED_TYPE}"
             echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
             echo "runner-type=$SELF_HOSTED_TYPE" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # --- CI mode: check free tiers in priority order ---
+          # --- CI mode: check free tiers ---
+          # If billing check fails, default to GitHub-hosted (safe fallback)
           check_org_minutes() {
             local ORG="$1"
             local HTTP_CODE
@@ -110,40 +107,58 @@ jobs:
               "https://api.github.com/orgs/${ORG}/settings/billing/usage" 2>/dev/null)
 
             if [ "$HTTP_CODE" != "200" ]; then
-              echo "-1"
+              echo "BILLING_CHECK_FAILED"
               return
             fi
 
             local USED
             USED=$(jq '[.usageItems[] | select(.product == "actions")] | map(.quantity) | add // 0' /tmp/billing_${ORG}.json 2>/dev/null)
             if [ -z "$USED" ] || [ "$USED" = "null" ]; then
-              echo "-1"
+              echo "BILLING_CHECK_FAILED"
               return
             fi
             echo $(( FREE_TIER_LIMIT - ${USED%.*} ))
           }
 
-          # Priority 1: tsi400 GitHub-hosted
+          # Check tsi400 free tier
           TSI_REMAINING=$(check_org_minutes "tsi400")
-          echo "tsi400 free minutes remaining: ~${TSI_REMAINING}"
+          echo "tsi400 billing check: ${TSI_REMAINING}"
+
+          # If billing check failed, default to GitHub-hosted
+          # (we can't confirm minutes are exhausted, so assume they're not)
+          if [ "$TSI_REMAINING" = "BILLING_CHECK_FAILED" ]; then
+            echo "::warning::Billing API check failed — defaulting to GitHub-hosted"
+            echo "runner=$GITHUB_HOSTED" >> $GITHUB_OUTPUT
+            echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           if [ "$TSI_REMAINING" -gt "$BUFFER" ] 2>/dev/null; then
-            echo "runner=$TSI_HOSTED" >> $GITHUB_OUTPUT
+            echo "Using GitHub-hosted ($TSI_REMAINING tsi400 min remaining)"
+            echo "runner=$GITHUB_HOSTED" >> $GITHUB_OUTPUT
             echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
-            echo "Using tsi400 GitHub-hosted ($TSI_REMAINING min remaining)"
             exit 0
           fi
 
-          # Priority 2: wayfong GitHub-hosted
+          # Check wayfong free tier
           WF_REMAINING=$(check_org_minutes "wayfong")
-          echo "wayfong free minutes remaining: ~${WF_REMAINING}"
-          if [ "$WF_REMAINING" -gt "$BUFFER" ] 2>/dev/null; then
-            echo "runner=$TSI_HOSTED" >> $GITHUB_OUTPUT
+          echo "wayfong billing check: ${WF_REMAINING}"
+
+          if [ "$WF_REMAINING" = "BILLING_CHECK_FAILED" ]; then
+            echo "::warning::Billing API check failed — defaulting to GitHub-hosted"
+            echo "runner=$GITHUB_HOSTED" >> $GITHUB_OUTPUT
             echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
-            echo "Using wayfong GitHub-hosted ($WF_REMAINING min remaining)"
             exit 0
           fi
 
-          # Priority 3: self-hosted (org-aware)
+          if [ "$WF_REMAINING" -gt "$BUFFER" ] 2>/dev/null; then
+            echo "Using GitHub-hosted ($WF_REMAINING wayfong min remaining)"
+            echo "runner=$GITHUB_HOSTED" >> $GITHUB_OUTPUT
+            echo "runner-type=github-hosted" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Both orgs exhausted — use self-hosted
           echo "Free tiers exhausted — ${SELF_HOSTED_TYPE} self-hosted"
           echo "runner=$SELF_HOSTED" >> $GITHUB_OUTPUT
           echo "runner-type=$SELF_HOSTED_TYPE" >> $GITHUB_OUTPUT
