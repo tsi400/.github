@@ -57,7 +57,7 @@ jobs:
           fi
 
       - name: Snyk test
-        uses: snyk/actions/node@cdb760004ba9ea4d525f2e043745dfe85bb9077e # master
+        uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -84,7 +84,7 @@ jobs:
         run: docker build -t ${{ inputs.image-name }}:${{ github.sha }} .
 
       - name: Snyk container test
-        uses: snyk/actions/docker@cdb760004ba9ea4d525f2e043745dfe85bb9077e # master
+        uses: snyk/actions/docker@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
