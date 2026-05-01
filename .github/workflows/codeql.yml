@@ -23,10 +23,15 @@ on:
         default: +security-and-quality
 
 jobs:
+  pick-runner:
+    uses: tsi400/.github/.github/workflows/pick-runner.yml@main
+    secrets: inherit
+
   analyze:
     name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    needs: [pick-runner]
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner) }}
+    timeout-minutes: 60
     permissions:
       actions: read
       contents: read

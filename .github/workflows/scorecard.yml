@@ -22,9 +22,15 @@ on:
 permissions: read-all
 
 jobs:
+  pick-runner:
+    uses: tsi400/.github/.github/workflows/pick-runner.yml@main
+    secrets: inherit
+
   analysis:
     name: Scorecard Analysis
-    runs-on: ubuntu-latest
+    needs: [pick-runner]
+    runs-on: ${{ fromJSON(needs.pick-runner.outputs.runner) }}
+    timeout-minutes: 60
     permissions:
       security-events: write
       id-token: write
