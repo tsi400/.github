@@ -10,6 +10,7 @@ name: Scorecard
 #         security-events: write
 #         id-token: write
 #         contents: read
+#       secrets: inherit
 
 on:
   workflow_call:
@@ -47,6 +48,7 @@ jobs:
           results_file: results.sarif
           results_format: sarif
           publish_results: ${{ inputs.publish-results }}
+          repo_token: ${{ secrets.WF_ORG_TOKEN || github.token }}
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@7fc6561ed893d15cec696e062df840b21db27eb0 # v4.35.2
