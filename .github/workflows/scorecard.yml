@@ -19,8 +19,6 @@ on:
         type: boolean
         default: true
 
-permissions: read-all
-
 jobs:
   pick-runner:
     uses: tsi400/.github/.github/workflows/pick-runner.yml@main
