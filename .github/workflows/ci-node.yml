@@ -99,6 +99,13 @@ jobs:
           cache: ${{ inputs.package-manager }}
 
       - name: Install dependencies
+        env:
+          # Lets package.json + .npmrc files reference @tsi400/* scoped packages
+          # from GitHub Packages. GH Packages npm requires an auth token even
+          # for public packages, and the auto-generated GITHUB_TOKEN already has
+          # the right permissions for any tsi400 repo.
+          # See myLMS PR #1519 chain for the install-time auth requirement.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm install --frozen-lockfile
